@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use http::{Request, Uri};
 use pingora::prelude::*;
-use pingora::utils::tls::CertKey;
+use pingora::protocols::tls::CaType;
+use pingora::utils::tls::{parse_x509, CertKey, WrappedX509};
 use rustls_pemfile::{certs, private_key};
 use std::{fs::File, io::BufReader, sync::Arc, time::Duration};
 
@@ -24,6 +25,7 @@ pub struct Proxy {
     pub upstream_timeout: Duration,
     pub upstream_force_h2c: bool,
     pub upstream_client_cert_key: Option<Arc<CertKey>>,
+    pub upstream_ca: Option<Arc<CaType>>,
 }
 pub struct RequestContext {
     pub identity: Option<crate::authorization::Identity>,
@@ -141,6 +143,7 @@ impl ProxyHttp for Proxy {
             peer.options.set_http_version(2, 2);
         }
         peer.client_cert_key = self.upstream_client_cert_key.clone();
+        peer.options.ca = self.upstream_ca.clone();
         Ok(Box::new(peer))
     }
     async fn upstream_request_filter(
@@ -177,6 +180,7 @@ pub fn build_proxy(
     upstream_force_h2c: bool,
     upstream_client_cert_file: Option<std::path::PathBuf>,
     upstream_client_key_file: Option<std::path::PathBuf>,
+    upstream_ca_file: Option<std::path::PathBuf>,
 ) -> Proxy {
     let upstream_client_cert_key = match (upstream_client_cert_file, upstream_client_key_file) {
         (Some(cert), Some(key)) => {
@@ -195,6 +199,18 @@ pub fn build_proxy(
         }
         _ => None,
     };
+    let upstream_ca: Option<Arc<CaType>> = upstream_ca_file.map(|path| {
+        let certs = certs(&mut BufReader::new(File::open(path).expect("upstream CA")))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("upstream CA PEM");
+        Arc::from(
+            certs
+                .into_iter()
+                .map(|cert| WrappedX509::new(cert.to_vec(), parse_x509))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    });
     Proxy {
         upstream,
         authz,
@@ -209,5 +225,6 @@ pub fn build_proxy(
         upstream_timeout,
         upstream_force_h2c,
         upstream_client_cert_key,
+        upstream_ca,
     }
 }

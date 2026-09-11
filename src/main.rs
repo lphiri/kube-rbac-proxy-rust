@@ -218,6 +218,7 @@ fn main() -> Result<()> {
         a.upstream_force_h2c,
         a.upstream_client_cert_file,
         a.upstream_client_key_file,
+        a.upstream_ca_file,
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
