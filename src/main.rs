@@ -226,6 +226,7 @@ fn main() -> Result<()> {
         Arc::new(AtomicU64::new(0)),
         a.http2_max_concurrent_streams,
         a.http2_max_size,
+        false,
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
@@ -255,7 +256,9 @@ fn main() -> Result<()> {
     }
     server.add_service(service);
     if a.proxy_endpoints_port != 0 {
-        let mut operational = http_proxy_service(&server.configuration, proxy);
+        let mut operational_proxy = proxy;
+        operational_proxy.operational_endpoints = true;
+        let mut operational = http_proxy_service(&server.configuration, operational_proxy);
         operational.add_tcp(&format!("0.0.0.0:{}", a.proxy_endpoints_port));
         server.add_service(operational);
     }

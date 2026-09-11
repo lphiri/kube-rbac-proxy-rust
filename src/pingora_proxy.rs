@@ -35,6 +35,7 @@ pub struct Proxy {
     pub upstream_client_cert_key: Option<Arc<CertKey>>,
     pub upstream_ca: Option<Arc<CaType>>,
     pub requests_total: Arc<AtomicU64>,
+    pub operational_endpoints: bool,
     pub http2_max_concurrent_streams: u32,
     pub http2_max_size: u32,
 }
@@ -74,13 +75,13 @@ impl ProxyHttp for Proxy {
     }
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path().to_string();
-        if path == "/healthz" {
+        if self.operational_endpoints && path == "/healthz" {
             session
                 .respond_error_with_body(200, Bytes::from_static(b"ok\n"))
                 .await?;
             return Ok(true);
         }
-        if path == "/metrics" {
+        if self.operational_endpoints && path == "/metrics" {
             let count = self.requests_total.load(Ordering::Relaxed);
             session
                 .respond_error_with_body(
@@ -198,6 +199,7 @@ pub fn build_proxy(
     requests_total: Arc<AtomicU64>,
     http2_max_concurrent_streams: u32,
     http2_max_size: u32,
+    operational_endpoints: bool,
 ) -> Proxy {
     let upstream_client_cert_key = match (upstream_client_cert_file, upstream_client_key_file) {
         (Some(cert), Some(key)) => {
@@ -246,5 +248,6 @@ pub fn build_proxy(
         requests_total,
         http2_max_concurrent_streams,
         http2_max_size,
+        operational_endpoints,
     }
 }
