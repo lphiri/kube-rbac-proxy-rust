@@ -48,6 +48,7 @@ fn endpoint_value(
     replacement: &str,
     header: &str,
     query: &str,
+    method: &str,
     captures: &std::collections::HashMap<String, String>,
 ) -> String {
     value(template, replacement, captures)
@@ -55,6 +56,8 @@ fn endpoint_value(
         .replace("{{ .FromHeader }}", header)
         .replace("{{.FromQueryString}}", query)
         .replace("{{ .FromQueryString }}", query)
+        .replace("{{.FromMethod}}", method)
+        .replace("{{ .FromMethod }}", method)
 }
 fn endpoint_match(pattern: &str, path: &str) -> Option<std::collections::HashMap<String, String>> {
     let clean = |input: &str| {
@@ -134,12 +137,19 @@ pub fn attributes(
                 let mut ra = rule.resource_attributes.clone();
                 let rewrite = endpoint_rewrites(req, &rule.rewrites)?;
                 let (v, header, query) = rewrite.first().cloned().unwrap_or_default();
-                ra.namespace = endpoint_value(&ra.namespace, &v, &header, &query, &captures);
-                ra.api_group = endpoint_value(&ra.api_group, &v, &header, &query, &captures);
-                ra.api_version = endpoint_value(&ra.api_version, &v, &header, &query, &captures);
-                ra.resource = endpoint_value(&ra.resource, &v, &header, &query, &captures);
-                ra.subresource = endpoint_value(&ra.subresource, &v, &header, &query, &captures);
-                ra.name = endpoint_value(&ra.name, &v, &header, &query, &captures);
+                let method_verb = kube_verb(req.method().as_str());
+                ra.verb = endpoint_value(&ra.verb, &v, &header, &query, method_verb, &captures);
+                ra.namespace =
+                    endpoint_value(&ra.namespace, &v, &header, &query, method_verb, &captures);
+                ra.api_group =
+                    endpoint_value(&ra.api_group, &v, &header, &query, method_verb, &captures);
+                ra.api_version =
+                    endpoint_value(&ra.api_version, &v, &header, &query, method_verb, &captures);
+                ra.resource =
+                    endpoint_value(&ra.resource, &v, &header, &query, method_verb, &captures);
+                ra.subresource =
+                    endpoint_value(&ra.subresource, &v, &header, &query, method_verb, &captures);
+                ra.name = endpoint_value(&ra.name, &v, &header, &query, method_verb, &captures);
                 out.push(to_attr(&ra, req, identity.clone(), true));
             }
             return Ok(out);
@@ -189,11 +199,6 @@ pub fn attributes(
 }
 fn collect(req: &Request<()>, r: &Rewrites) -> Vec<String> {
     let mut v = Vec::new();
-    if let Some(h) = &r.by_http_header {
-        if let Some(x) = req.headers().get(&h.name).and_then(|x| x.to_str().ok()) {
-            v.extend(x.split(',').map(|x| x.trim().to_string()));
-        }
-    }
     if let Some(q) = &r.by_query_parameter {
         for (k, x) in url::form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes()) {
             if k == q.name {
@@ -201,7 +206,76 @@ fn collect(req: &Request<()>, r: &Rewrites) -> Vec<String> {
             }
         }
     }
+    if let Some(h) = &r.by_http_header {
+        for x in req
+            .headers()
+            .get_all(&h.name)
+            .iter()
+            .filter_map(|x| x.to_str().ok())
+        {
+            v.push(x.to_string());
+        }
+    }
     v
+}
+
+pub fn validate_authorization_config(cfg: &AuthorizationConfig) -> Result<()> {
+    for (endpoint_index, endpoint) in cfg.endpoints.iter().enumerate() {
+        if endpoint.path.trim().is_empty() {
+            return Err(anyhow!(
+                "authorization.endpoints[{endpoint_index}]: path must be non-empty"
+            ));
+        }
+        if endpoint.mappings.is_empty() {
+            return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): mappings must contain at least one entry", endpoint.path));
+        }
+        let mut captures = std::collections::HashSet::new();
+        for segment in endpoint.path.split('/') {
+            if segment.contains(['{', '}']) {
+                if !(segment.starts_with('{') && segment.ends_with('}') && segment.len() >= 3) {
+                    return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): malformed path capture {:?}", endpoint.path, segment));
+                }
+                let name = &segment[1..segment.len() - 1];
+                let valid = name.chars().enumerate().all(|(i, c)| {
+                    c.is_ascii_alphabetic() || (i > 0 && (c.is_ascii_digit() || c == '_'))
+                });
+                if !valid {
+                    return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): invalid path capture name {:?}", endpoint.path, name));
+                }
+                if !captures.insert(name) {
+                    return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): duplicate path capture {:?}", endpoint.path, name));
+                }
+            }
+        }
+        for (mapping_index, mapping) in endpoint.mappings.iter().enumerate() {
+            if mapping.methods.is_empty() {
+                return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): mappings[{mapping_index}] must specify a non-empty methods list", endpoint.path));
+            }
+            if mapping.resources.is_empty() {
+                return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): mappings[{mapping_index}] must contain at least one resource rule", endpoint.path));
+            }
+            for (resource_index, rule) in mapping.resources.iter().enumerate() {
+                if let Some(header) = &rule.rewrites.by_http_header {
+                    if header.name.trim().is_empty() {
+                        return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): mappings[{mapping_index}].resources[{resource_index}].rewrites.byHttpHeader must specify a non-empty name", endpoint.path));
+                    }
+                }
+                if let Some(query) = &rule.rewrites.by_query_parameter {
+                    if query.name.trim().is_empty() {
+                        return Err(anyhow!("authorization.endpoints[{endpoint_index}] (path {:?}): mappings[{mapping_index}].resources[{resource_index}].rewrites.byQueryParameter must specify a non-empty name", endpoint.path));
+                    }
+                }
+            }
+        }
+    }
+    for (index, rule) in cfg.static_rules.iter().enumerate() {
+        if rule.resource_request != rule.path.is_empty() {
+            return Err(anyhow!(
+                "authorization.static[{index}]: resource requests must not include a path"
+            ));
+        }
+    }
+    Ok(())
 }
 fn endpoint_rewrites(req: &Request<()>, r: &Rewrites) -> Result<Vec<(String, String, String)>> {
     let header = r.by_http_header.as_ref().map(|h| {
@@ -403,6 +477,40 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_templates_support_method_and_query_values() {
+        let cfg = AuthorizationConfig {
+            endpoints: vec![Endpoint {
+                path: "/events".into(),
+                mappings: vec![Mapping {
+                    methods: vec!["post".into()],
+                    resources: vec![Rule {
+                        rewrites: Rewrites {
+                            by_query_parameter: Some(NamedValue {
+                                name: "tenant".into(),
+                            }),
+                            ..Default::default()
+                        },
+                        resource_attributes: ResourceAttributes {
+                            namespace: "{{.FromQueryString}}".into(),
+                            verb: "{{.FromMethod}}".into(),
+                            ..Default::default()
+                        },
+                    }],
+                }],
+            }],
+            ..Default::default()
+        };
+        let attrs = attributes(
+            &cfg,
+            &request(Method::POST, "/events?tenant=team-a"),
+            user(),
+        )
+        .unwrap();
+        assert_eq!(attrs[0].namespace, "team-a");
+        assert_eq!(attrs[0].verb, "create");
+    }
+
+    #[test]
     fn format1_resource_and_non_resource_attributes() {
         let resource = AuthorizationConfig {
             resource_attributes: Some(ResourceAttributes {
@@ -466,10 +574,36 @@ mod tests {
         let req = Request::builder()
             .method(Method::GET)
             .uri("/metrics")
-            .header("X-Tenant", "one,two")
+            .header("X-Tenant", "one")
+            .header("X-Tenant", "two")
             .body(())
             .unwrap();
         assert_eq!(attributes(&header_cfg, &req, user()).unwrap().len(), 2);
+
+        let both = AuthorizationConfig {
+            rewrites: Some(Rewrites {
+                by_query_parameter: Some(NamedValue {
+                    name: "tenant".into(),
+                }),
+                by_http_header: Some(NamedValue {
+                    name: "X-Tenant".into(),
+                }),
+            }),
+            resource_attributes: Some(ResourceAttributes {
+                namespace: "{{ .Value }}".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/metrics?tenant=query")
+            .header("X-Tenant", "header")
+            .body(())
+            .unwrap();
+        let attrs = attributes(&both, &req, user()).unwrap();
+        assert_eq!(attrs[0].namespace, "query");
+        assert_eq!(attrs[1].namespace, "header");
     }
 
     #[test]
@@ -577,5 +711,110 @@ mod tests {
             ..Default::default()
         };
         assert!(static_allows(&resource_rules, &resource));
+    }
+
+    #[test]
+    fn authorization_validation_rejects_invalid_endpoint_shapes() {
+        let invalid = [
+            AuthorizationConfig {
+                endpoints: vec![Endpoint {
+                    path: "".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            AuthorizationConfig {
+                endpoints: vec![Endpoint {
+                    path: "/p".into(),
+                    mappings: vec![],
+                }],
+                ..Default::default()
+            },
+            AuthorizationConfig {
+                endpoints: vec![Endpoint {
+                    path: "/p".into(),
+                    mappings: vec![Mapping {
+                        methods: vec![],
+                        ..Default::default()
+                    }],
+                }],
+                ..Default::default()
+            },
+            AuthorizationConfig {
+                endpoints: vec![Endpoint {
+                    path: "/p".into(),
+                    mappings: vec![Mapping {
+                        methods: vec!["get".into()],
+                        resources: vec![],
+                    }],
+                }],
+                ..Default::default()
+            },
+            AuthorizationConfig {
+                endpoints: vec![Endpoint {
+                    path: "/p/{tenant-id}".into(),
+                    mappings: vec![Mapping {
+                        methods: vec!["get".into()],
+                        resources: vec![Rule::default()],
+                    }],
+                }],
+                ..Default::default()
+            },
+        ];
+        for cfg in invalid {
+            assert!(validate_authorization_config(&cfg).is_err());
+        }
+    }
+
+    #[test]
+    fn authorization_validation_rejects_duplicate_captures_and_invalid_rewrites() {
+        let duplicate = AuthorizationConfig {
+            endpoints: vec![Endpoint {
+                path: "/{tenant}/reports/{tenant}".into(),
+                mappings: vec![Mapping {
+                    methods: vec!["get".into()],
+                    resources: vec![Rule::default()],
+                }],
+            }],
+            ..Default::default()
+        };
+        assert!(validate_authorization_config(&duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate"));
+        let rewrite = AuthorizationConfig {
+            endpoints: vec![Endpoint {
+                path: "/p".into(),
+                mappings: vec![Mapping {
+                    methods: vec!["get".into()],
+                    resources: vec![Rule {
+                        rewrites: Rewrites {
+                            by_http_header: Some(NamedValue { name: " ".into() }),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }],
+                }],
+            }],
+            ..Default::default()
+        };
+        assert!(validate_authorization_config(&rewrite)
+            .unwrap_err()
+            .to_string()
+            .contains("byHttpHeader"));
+    }
+
+    #[test]
+    fn static_authorization_validation_requires_resource_rules_without_paths() {
+        let invalid = AuthorizationConfig {
+            static_rules: vec![StaticRule {
+                path: "/metrics".into(),
+                resource_request: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(validate_authorization_config(&invalid).is_err());
+        assert!(validate_authorization_config(&AuthorizationConfig::default()).is_ok());
     }
 }

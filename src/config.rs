@@ -97,7 +97,9 @@ pub struct Rule {
 
 pub fn load(path: &str) -> anyhow::Result<ConfigFile> {
     let data = std::fs::read_to_string(path)?;
-    Ok(serde_yaml::from_str(&data)?)
+    let config: ConfigFile = serde_yaml::from_str(&data)?;
+    crate::authorization::validate_authorization_config(&config.authorization)?;
+    Ok(config)
 }
 
 #[cfg(test)]
