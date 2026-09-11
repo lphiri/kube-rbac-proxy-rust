@@ -23,4 +23,4 @@ cargo test
 
 Build the non-root container image with `docker build -t kube-rbac-proxy-rust .`.
 
-Remaining parity work is tracked in `PLAN.md`: upstream custom CA injection, TLS cipher/min-version enforcement and certificate reload, exact client-certificate Common Name extraction, metrics/access logging, the dedicated operational port, graceful-drain tuning, and kind-based end-to-end coverage.
+Remaining parity work is tracked in `PLAN.md`: TLS cipher/min-version enforcement and certificate reload, exact client-certificate Common Name extraction, live metrics/access logging, graceful-drain tuning, and kind-based end-to-end coverage.
