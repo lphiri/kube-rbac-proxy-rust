@@ -153,6 +153,10 @@ impl ProxyHttp for Proxy {
         peer.options.write_timeout = Some(self.upstream_timeout);
         if h2c {
             peer.options.set_http_version(2, 2);
+        } else if tls {
+            // Match Go's HTTPS transport: negotiate HTTP/2 when the upstream
+            // advertises it, while retaining HTTP/1.1 fallback.
+            peer.options.set_http_version(2, 1);
         }
         peer.options.max_h2_streams = self.http2_max_concurrent_streams as usize;
         peer.options.h2_stream_window_size = Some(self.http2_max_size);
