@@ -178,6 +178,26 @@ impl ProxyHttp for Proxy {
         }
         Ok(())
     }
+
+    async fn logging(
+        &self,
+        session: &mut Session,
+        error: Option<&pingora::Error>,
+        _ctx: &mut Self::CTX,
+    ) {
+        let method = session.req_header().method.as_str();
+        let path = session.req_header().uri.path();
+        if let Some(error) = error {
+            log::warn!(
+                "proxy request method={} path={} failed: {}",
+                method,
+                path,
+                error
+            );
+        } else {
+            log::info!("proxy request method={} path={}", method, path);
+        }
+    }
 }
 #[allow(clippy::too_many_arguments)]
 pub fn build_proxy(
