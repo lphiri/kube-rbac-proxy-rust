@@ -4,6 +4,7 @@ use kube_rbac_proxy::{
     authn::AuthenticatorChain,
     config,
     kube::{KubernetesAuthenticator, KubernetesClient},
+    oidc::OidcAuthenticator,
     pingora_proxy,
 };
 use pingora::prelude::*;
@@ -156,13 +157,27 @@ fn main() -> Result<()> {
         a.kube_api_qps,
         a.kube_api_burst,
     )?;
-    let authenticators = match &kube_client {
-        Some(client) => AuthenticatorChain::new(vec![Arc::new(KubernetesAuthenticator {
+    let mut authn = Vec::new();
+    if let Some(issuer) = &a.oidc_issuer {
+        authn.push(Arc::new(OidcAuthenticator::new(
+            issuer.clone(),
+            a.oidc_client_id.clone().unwrap_or_default(),
+            a.oidc_username_claim.clone(),
+            a.oidc_username_prefix.clone(),
+            a.oidc_groups_claim.clone(),
+            a.oidc_groups_prefix.clone(),
+            &a.oidc_sign_alg,
+            a.oidc_ca_file.as_deref(),
+        )?)
+            as Arc<dyn kube_rbac_proxy::authn::Authenticator>);
+    }
+    if let Some(client) = &kube_client {
+        authn.push(Arc::new(KubernetesAuthenticator {
             client: client.clone(),
             audiences: a.auth_token_audiences.clone(),
-        })]),
-        None => AuthenticatorChain::default(),
-    };
+        }) as Arc<dyn kube_rbac_proxy::authn::Authenticator>);
+    }
+    let authenticators = AuthenticatorChain::new(authn);
     let mut server = Server::new(None)?;
     server.bootstrap();
     let proxy = pingora_proxy::build_proxy(
