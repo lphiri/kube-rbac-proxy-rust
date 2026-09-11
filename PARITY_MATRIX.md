@@ -13,10 +13,10 @@ the implementation and its relevant tests both exist.
 | Client CA verification and CN mapping | `src/cert_auth.rs`, `src/main.rs` | callback and fixture tests | `1886ec2` | Implemented |
 | TLS serving and certificate reload | `src/tls.rs`, `src/main.rs` | PEM resolver tests | `3091db4` | Implemented |
 | Upstream CA, mTLS, timeout, h2c | `src/pingora_proxy.rs` | compile/config tests | `bcabeab`, `23cb782` | Implemented; protocol E2E pending |
-| Operational port and health endpoint | `src/main.rs`, `src/pingora_proxy.rs` | isolated Kind listener probe | `0bd4eb5` | Implemented |
+| Operational port and health endpoint | `src/main.rs`, `src/pingora_proxy.rs` | isolated Kind and local TLS listener probes | `09f59e8` | Implemented |
 | Metrics and sanitized access logging | `src/pingora_proxy.rs` | runtime implementation | `765312e`, `af33bbf` | Implemented |
 | Graceful drain and HTTP/2 limits | `src/main.rs`, `src/pingora_proxy.rs` | build/test gate | `d632225`, `9c5cb81` | Implemented |
 | Production container | `Dockerfile` | locked release build and non-root image inspection | `0bd4eb5` | Implemented |
 | TLS cipher/min-version selection | `src/tls.rs` rustls provider filtering before Pingora listener construction | provider unit tests and live generated self-signed listener handshake | `7eaf555` | Implemented for TLS 1.3 minimum and supported cipher suites |
 | HTTPS, h2c, HTTP/2, mTLS, streaming E2E | Planned integration harness | no protocol matrix yet | — | Pending |
-| Kind TokenReview/SAR/RBAC/OIDC/client-cert E2E | `tests/e2e/kind.sh` | live TokenReview/SAR/RBAC, forwarding, 401, healthz, metrics | `0bd4eb5` | Partial: OIDC and client-cert scenarios pending |
+| Kind TokenReview/SAR/RBAC/OIDC/client-cert E2E | `tests/e2e/kind.sh`, `tests/e2e/client-cert.sh` | live TokenReview/SAR/RBAC plus local client-cert E2E, forwarding, 401, healthz, metrics | `5f4bacc` | Partial: Kind OIDC and protocol matrix pending |
