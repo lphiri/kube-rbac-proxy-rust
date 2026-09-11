@@ -202,6 +202,10 @@ fn main() -> Result<()> {
     }
     let authenticators = AuthenticatorChain::new(authn);
     let mut server = Server::new(None)?;
+    if let Some(configuration) = Arc::get_mut(&mut server.configuration) {
+        configuration.grace_period_seconds = Some(30);
+        configuration.graceful_shutdown_timeout_seconds = Some(30);
+    }
     server.bootstrap();
     let proxy = pingora_proxy::build_proxy(
         a.upstream.parse()?,
