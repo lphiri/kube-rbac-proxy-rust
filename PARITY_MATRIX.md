@@ -17,6 +17,6 @@ the implementation and its relevant tests both exist.
 | Metrics and sanitized access logging | `src/pingora_proxy.rs` | runtime implementation | `765312e`, `af33bbf` | Implemented |
 | Graceful drain and HTTP/2 limits | `src/main.rs`, `src/pingora_proxy.rs` | build/test gate | `d632225`, `9c5cb81` | Implemented |
 | Production container | `Dockerfile` | locked release build and non-root image inspection | `0bd4eb5` | Implemented |
-| TLS cipher/min-version selection | `src/tls.rs` rustls provider filtering before Pingora listener construction | provider unit tests for named suites and TLS 1.3 minimum | next checkpoint | Implemented for TLS 1.3 minimum and supported cipher suites |
+| TLS cipher/min-version selection | `src/tls.rs` rustls provider filtering before Pingora listener construction | provider unit tests and live generated self-signed listener handshake | `7eaf555` | Implemented for TLS 1.3 minimum and supported cipher suites |
 | HTTPS, h2c, HTTP/2, mTLS, streaming E2E | Planned integration harness | no protocol matrix yet | — | Pending |
 | Kind TokenReview/SAR/RBAC/OIDC/client-cert E2E | `tests/e2e/kind.sh` | live TokenReview/SAR/RBAC, forwarding, 401, healthz, metrics | `0bd4eb5` | Partial: OIDC and client-cert scenarios pending |
