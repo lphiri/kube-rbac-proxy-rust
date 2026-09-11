@@ -57,4 +57,15 @@ mod tests {
         let resolver = ReloadingCertificateResolver::new("missing-cert.pem", "missing-key.pem");
         assert!(resolver.load().is_none());
     }
+
+    #[test]
+    fn valid_pem_files_load_a_certified_key() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let resolver = ReloadingCertificateResolver::new(
+            root.join("tests/fixtures/reload-cert.pem"),
+            root.join("tests/fixtures/reload-key.pem"),
+        );
+        let key = resolver.load().expect("fixture certificate should load");
+        assert_eq!(key.cert.len(), 1);
+    }
 }
