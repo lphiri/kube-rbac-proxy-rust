@@ -99,3 +99,56 @@ pub fn load(path: &str) -> anyhow::Result<ConfigFile> {
     let data = std::fs::read_to_string(path)?;
     Ok(serde_yaml::from_str(&data)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn example_authorization_yaml_deserializes() {
+        let config: ConfigFile = serde_yaml::from_str(
+            r#"
+authorization:
+  rewrites:
+    byQueryParameter:
+      name: namespace
+  resourceAttributes:
+    apiVersion: v1
+    resource: namespace
+    subresource: metrics
+    namespace: "{{ .Value }}"
+  static:
+    - resourceRequest: true
+      resource: namespace
+  endpoints:
+    - path: /api/{tenant}/events
+      mappings:
+        - methods: [post]
+          resources:
+            - resourceAttributes:
+                namespace: "{{ index .PathParams \"tenant\" }}"
+                resource: events
+"#,
+        )
+        .unwrap();
+        let auth = config.authorization;
+        assert_eq!(
+            auth.rewrites.unwrap().by_query_parameter.unwrap().name,
+            "namespace"
+        );
+        assert_eq!(auth.resource_attributes.unwrap().api_version, "v1");
+        assert_eq!(auth.static_rules.len(), 1);
+        assert_eq!(
+            auth.endpoints[0].mappings[0].resources[0]
+                .resource_attributes
+                .resource,
+            "events"
+        );
+    }
+
+    #[test]
+    fn malformed_yaml_is_rejected() {
+        let result: Result<ConfigFile, _> = serde_yaml::from_str("authorization: [not-a-map]");
+        assert!(result.is_err());
+    }
+}
