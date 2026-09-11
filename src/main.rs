@@ -24,8 +24,8 @@ use std::{path::PathBuf, time::Duration};
 struct Args {
     #[arg(long)]
     upstream: String,
-    #[arg(long, default_value = "0.0.0.0:8443")]
-    secure_listen_address: String,
+    #[arg(long)]
+    secure_listen_address: Option<String>,
     #[arg(long, hide = true)]
     insecure_listen_address: Option<String>,
     #[arg(long, default_value_t = 0)]
@@ -179,8 +179,10 @@ impl Args {
         if self.http2_max_concurrent_streams == 0 || self.http2_max_size == 0 {
             anyhow::bail!("HTTP/2 limits must be positive");
         }
-        if self.proxy_endpoints_port == 0 && self.insecure_listen_address.is_some() {
-            anyhow::bail!("--insecure-listen-address is deprecated and cannot be used without --proxy-endpoints-port");
+        if self.secure_listen_address.is_none() && self.insecure_listen_address.is_none() {
+            anyhow::bail!(
+                "at least one of --secure-listen-address or --insecure-listen-address is required"
+            );
         }
         Ok(())
     }
@@ -253,11 +255,15 @@ fn main() -> Result<()> {
         false,
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
-    if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
+    if let Some(address) = &a.secure_listen_address {
         let mut tls = pingora::listeners::tls::TlsSettings::with_callbacks(Box::new(
             ClientCertificateCallback,
         ))?;
-        tls.set_cert_resolver(Arc::new(ReloadingCertificateResolver::new(cert, key)));
+        if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
+            tls.set_cert_resolver(Arc::new(ReloadingCertificateResolver::new(cert, key)));
+        } else {
+            tls.set_cert_resolver(Arc::new(tls::self_signed_resolver()?));
+        }
         tls.enable_h2();
         if let Some(ca_path) = &a.client_ca_file {
             let mut roots = RootCertStore::empty();
@@ -267,9 +273,10 @@ fn main() -> Result<()> {
             let verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
             tls.set_client_cert_verifier(verifier);
         }
-        service.add_tls_with_settings(&a.secure_listen_address, None, tls);
-    } else {
-        service.add_tcp(&a.secure_listen_address);
+        service.add_tls_with_settings(address, None, tls);
+    }
+    if let Some(address) = &a.insecure_listen_address {
+        service.add_tcp(address);
     }
     server.add_service(service);
     if a.proxy_endpoints_port != 0 {
@@ -295,7 +302,10 @@ mod tests {
 
     #[test]
     fn minimal_configuration_is_valid() {
-        assert!(parse(&[]).validate().is_ok());
+        assert!(parse(&[]).validate().is_err());
+        assert!(parse(&["--secure-listen-address", "127.0.0.1:8443"])
+            .validate()
+            .is_ok());
     }
 
     #[test]
@@ -348,6 +358,8 @@ mod tests {
             "--upstream",
             "h2c://127.0.0.1:9000",
             "--upstream-force-h2c",
+            "--secure-listen-address",
+            "127.0.0.1:8443",
         ])
         .unwrap();
         assert!(args.validate().is_ok());

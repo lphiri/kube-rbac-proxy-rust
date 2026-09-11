@@ -1,7 +1,7 @@
 use rustls::crypto::ring::sign::any_supported_type;
 use rustls::{
     crypto::{self, CryptoProvider},
-    pki_types::{CertificateDer, PrivateKeyDer},
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };
@@ -37,6 +37,34 @@ pub fn install_provider(min_version: &str, cipher_names: &[String]) -> anyhow::R
     provider_for(min_version, cipher_names)?
         .install_default()
         .map_err(|_| anyhow::anyhow!("TLS crypto provider was already installed"))
+}
+
+/// Resolver for the compatibility mode where Go generates a self-signed
+/// certificate when secure listening is requested without certificate files.
+pub struct StaticCertificateResolver(Arc<CertifiedKey>);
+
+impl fmt::Debug for StaticCertificateResolver {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("StaticCertificateResolver")
+    }
+}
+
+impl ResolvesServerCert for StaticCertificateResolver {
+    fn resolve(&self, _client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.0.clone())
+    }
+}
+
+pub fn self_signed_resolver() -> anyhow::Result<StaticCertificateResolver> {
+    let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into());
+    let generated = rcgen::generate_simple_self_signed(vec![name])?;
+    let certificate = CertificateDer::from(generated.cert.der().to_vec());
+    let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
+    let signer = any_supported_type(&key)?;
+    Ok(StaticCertificateResolver(Arc::new(CertifiedKey::new(
+        vec![certificate],
+        signer,
+    ))))
 }
 
 /// Loads the configured certificate and key for each new TLS handshake.
@@ -102,6 +130,12 @@ mod tests {
             &["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256".into()]
         )
         .is_err());
+    }
+
+    #[test]
+    fn self_signed_resolver_generates_a_certificate() {
+        let resolver = self_signed_resolver().unwrap();
+        assert!(resolver.0.cert.len() == 1);
     }
 
     #[test]

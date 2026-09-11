@@ -18,6 +18,7 @@ log = "0.4"
 pingora = { version = "0.9.0", features = ["proxy", "rustls"] }
 percent-encoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rcgen = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-pemfile = "2"
 x509-parser = "0.16"
