@@ -60,6 +60,10 @@ impl ProxyHttp for Proxy {
     }
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path().to_string();
+        if path == "/healthz" {
+            session.respond_error(200).await?;
+            return Ok(true);
+        }
         if !self.allow.is_empty() && !self.allow.iter().any(|p| matches(p, &path)) {
             session.respond_error(404).await?;
             return Ok(true);
