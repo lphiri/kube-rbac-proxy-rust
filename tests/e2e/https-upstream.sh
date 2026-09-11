@@ -78,4 +78,6 @@ if ! curl --fail --silent --show-error --insecure --http1.1 --max-time 5 \
 fi
 test "$(curl --fail --silent --show-error --insecure --http1.1 --max-time 5 \
   https://127.0.0.1:18443/stream | tr -d '\n')" = 'chunk-1chunk-2chunk-3'
+curl --fail --silent --show-error --insecure --http2 --max-time 5 \
+  https://127.0.0.1:18443/hello | grep -qx 'https-upstream-ok'
 echo "HTTPS upstream E2E passed: custom CA trust and forwarding"
