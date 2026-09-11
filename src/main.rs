@@ -11,7 +11,7 @@ use kube_rbac_proxy::{
 use pingora::prelude::*;
 use rustls::{server::WebPkiClientVerifier, RootCertStore};
 use rustls_pemfile::certs;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc};
 use std::{path::PathBuf, time::Duration};
 
 #[derive(Parser, Debug)]
@@ -219,6 +219,7 @@ fn main() -> Result<()> {
         a.upstream_client_cert_file,
         a.upstream_client_key_file,
         a.upstream_ca_file,
+        Arc::new(AtomicU64::new(0)),
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {

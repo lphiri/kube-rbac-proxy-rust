@@ -8,7 +8,15 @@ use pingora::prelude::*;
 use pingora::protocols::tls::CaType;
 use pingora::utils::tls::{parse_x509, CertKey, WrappedX509};
 use rustls_pemfile::{certs, private_key};
-use std::{fs::File, io::BufReader, sync::Arc, time::Duration};
+use std::{
+    fs::File,
+    io::BufReader,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 #[derive(Clone)]
 pub struct Proxy {
@@ -26,6 +34,7 @@ pub struct Proxy {
     pub upstream_force_h2c: bool,
     pub upstream_client_cert_key: Option<Arc<CertKey>>,
     pub upstream_ca: Option<Arc<CaType>>,
+    pub requests_total: Arc<AtomicU64>,
 }
 pub struct RequestContext {
     pub identity: Option<crate::authorization::Identity>,
@@ -70,16 +79,16 @@ impl ProxyHttp for Proxy {
             return Ok(true);
         }
         if path == "/metrics" {
+            let count = self.requests_total.load(Ordering::Relaxed);
             session
                 .respond_error_with_body(
                     200,
-                    Bytes::from_static(
-                        b"# HELP kube_rbac_proxy_requests_total Proxy requests\n# TYPE kube_rbac_proxy_requests_total counter\nkube_rbac_proxy_requests_total 0\n",
-                    ),
+                    Bytes::from(format!("# HELP kube_rbac_proxy_requests_total Proxy requests\n# TYPE kube_rbac_proxy_requests_total counter\nkube_rbac_proxy_requests_total {count}\n")),
                 )
                 .await?;
             return Ok(true);
         }
+        self.requests_total.fetch_add(1, Ordering::Relaxed);
         if !self.allow.is_empty() && !self.allow.iter().any(|p| matches(p, &path)) {
             session.respond_error(404).await?;
             return Ok(true);
@@ -181,6 +190,7 @@ pub fn build_proxy(
     upstream_client_cert_file: Option<std::path::PathBuf>,
     upstream_client_key_file: Option<std::path::PathBuf>,
     upstream_ca_file: Option<std::path::PathBuf>,
+    requests_total: Arc<AtomicU64>,
 ) -> Proxy {
     let upstream_client_cert_key = match (upstream_client_cert_file, upstream_client_key_file) {
         (Some(cert), Some(key)) => {
@@ -226,5 +236,6 @@ pub fn build_proxy(
         upstream_force_h2c,
         upstream_client_cert_key,
         upstream_ca,
+        requests_total,
     }
 }
