@@ -220,6 +220,8 @@ fn main() -> Result<()> {
         a.upstream_client_key_file,
         a.upstream_ca_file,
         Arc::new(AtomicU64::new(0)),
+        a.http2_max_concurrent_streams,
+        a.http2_max_size,
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {

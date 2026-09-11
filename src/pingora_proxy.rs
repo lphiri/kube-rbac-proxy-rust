@@ -35,6 +35,8 @@ pub struct Proxy {
     pub upstream_client_cert_key: Option<Arc<CertKey>>,
     pub upstream_ca: Option<Arc<CaType>>,
     pub requests_total: Arc<AtomicU64>,
+    pub http2_max_concurrent_streams: u32,
+    pub http2_max_size: u32,
 }
 pub struct RequestContext {
     pub identity: Option<crate::authorization::Identity>,
@@ -151,6 +153,9 @@ impl ProxyHttp for Proxy {
         if h2c {
             peer.options.set_http_version(2, 2);
         }
+        peer.options.max_h2_streams = self.http2_max_concurrent_streams as usize;
+        peer.options.h2_stream_window_size = Some(self.http2_max_size);
+        peer.options.h2_connection_window_size = Some(self.http2_max_size);
         peer.client_cert_key = self.upstream_client_cert_key.clone();
         peer.options.ca = self.upstream_ca.clone();
         Ok(Box::new(peer))
@@ -191,6 +196,8 @@ pub fn build_proxy(
     upstream_client_key_file: Option<std::path::PathBuf>,
     upstream_ca_file: Option<std::path::PathBuf>,
     requests_total: Arc<AtomicU64>,
+    http2_max_concurrent_streams: u32,
+    http2_max_size: u32,
 ) -> Proxy {
     let upstream_client_cert_key = match (upstream_client_cert_file, upstream_client_key_file) {
         (Some(cert), Some(key)) => {
@@ -237,5 +244,7 @@ pub fn build_proxy(
         upstream_client_cert_key,
         upstream_ca,
         requests_total,
+        http2_max_concurrent_streams,
+        http2_max_size,
     }
 }
