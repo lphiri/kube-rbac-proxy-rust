@@ -194,6 +194,7 @@ impl Args {
 }
 
 fn main() -> Result<()> {
+    let _ = env_logger::try_init();
     let a = Args::parse();
     a.validate()?;
     let tls_min_version = tls::normalize_min_version(&a.tls_min_version)
