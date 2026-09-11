@@ -31,10 +31,20 @@ import http.server
 import pathlib
 import ssl
 import sys
+import time
 
 certs = pathlib.Path(sys.argv[1])
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/stream":
+            self.send_response(200)
+            self.send_header("Content-Length", "21")
+            self.end_headers()
+            for chunk in (b"chunk-1", b"chunk-2", b"chunk-3"):
+                self.wfile.write(chunk)
+                self.wfile.flush()
+                time.sleep(0.2)
+            return
         body = b"https-upstream-ok\n"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -66,4 +76,6 @@ if ! curl --fail --silent --show-error --insecure --http1.1 --max-time 5 \
   cat "$WORK/proxy.log"
   exit 1
 fi
+test "$(curl --fail --silent --show-error --insecure --http1.1 --max-time 5 \
+  https://127.0.0.1:18443/stream | tr -d '\n')" = 'chunk-1chunk-2chunk-3'
 echo "HTTPS upstream E2E passed: custom CA trust and forwarding"
