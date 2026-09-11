@@ -10,7 +10,10 @@ use kube_rbac_proxy::{
     tls::{self, ReloadingCertificateResolver},
 };
 use pingora::prelude::*;
-use rustls::{server::WebPkiClientVerifier, RootCertStore};
+use rustls::{
+    server::{ResolvesServerCert, WebPkiClientVerifier},
+    RootCertStore,
+};
 use rustls_pemfile::certs;
 use std::sync::{atomic::AtomicU64, Arc};
 use std::{path::PathBuf, time::Duration};
@@ -183,6 +186,9 @@ impl Args {
                 "at least one of --secure-listen-address or --insecure-listen-address is required"
             );
         }
+        if self.proxy_endpoints_port != 0 && self.secure_listen_address.is_none() {
+            anyhow::bail!("--proxy-endpoints-port requires --secure-listen-address");
+        }
         Ok(())
     }
 }
@@ -256,25 +262,43 @@ fn main() -> Result<()> {
         false,
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
-    if let Some(address) = &a.secure_listen_address {
+    let tls_resolver: Option<Arc<dyn ResolvesServerCert>> = if a.secure_listen_address.is_some() {
+        Some(
+            if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
+                Arc::new(ReloadingCertificateResolver::new(cert, key))
+            } else {
+                Arc::new(tls::self_signed_resolver()?)
+            },
+        )
+    } else {
+        None
+    };
+    let client_verifier = if let Some(ca_path) = &a.client_ca_file {
+        let mut roots = RootCertStore::empty();
+        for certificate in certs(&mut std::io::BufReader::new(std::fs::File::open(ca_path)?)) {
+            roots.add(certificate?)?;
+        }
+        Some(WebPkiClientVerifier::builder(Arc::new(roots)).build()?)
+    } else {
+        None
+    };
+    let make_tls = || -> anyhow::Result<pingora::listeners::tls::TlsSettings> {
         let mut tls = pingora::listeners::tls::TlsSettings::with_callbacks(Box::new(
             ClientCertificateCallback,
         ))?;
-        if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
-            tls.set_cert_resolver(Arc::new(ReloadingCertificateResolver::new(cert, key)));
-        } else {
-            tls.set_cert_resolver(Arc::new(tls::self_signed_resolver()?));
-        }
+        tls.set_cert_resolver(Arc::clone(
+            tls_resolver
+                .as_ref()
+                .expect("TLS resolver exists for TLS service"),
+        ));
         tls.enable_h2();
-        if let Some(ca_path) = &a.client_ca_file {
-            let mut roots = RootCertStore::empty();
-            for certificate in certs(&mut std::io::BufReader::new(std::fs::File::open(ca_path)?)) {
-                roots.add(certificate?)?;
-            }
-            let verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
-            tls.set_client_cert_verifier(verifier);
+        if let Some(verifier) = &client_verifier {
+            tls.set_client_cert_verifier(Arc::clone(verifier));
         }
-        service.add_tls_with_settings(address, None, tls);
+        Ok(tls)
+    };
+    if let Some(address) = &a.secure_listen_address {
+        service.add_tls_with_settings(address, None, make_tls()?);
     }
     if let Some(address) = &a.insecure_listen_address {
         service.add_tcp(address);
@@ -284,7 +308,17 @@ fn main() -> Result<()> {
         let mut operational_proxy = proxy;
         operational_proxy.operational_endpoints = true;
         let mut operational = http_proxy_service(&server.configuration, operational_proxy);
-        operational.add_tcp(&format!("0.0.0.0:{}", a.proxy_endpoints_port));
+        if let Some(address) = &a.secure_listen_address {
+            let host = address
+                .rsplit_once(':')
+                .map(|(host, _)| host)
+                .unwrap_or(address);
+            operational.add_tls_with_settings(
+                &format!("{host}:{}", a.proxy_endpoints_port),
+                None,
+                make_tls()?,
+            );
+        }
         server.add_service(operational);
     }
     server.run_forever();
@@ -307,6 +341,14 @@ mod tests {
         assert!(parse(&["--secure-listen-address", "127.0.0.1:8443"])
             .validate()
             .is_ok());
+        assert!(parse(&[
+            "--insecure-listen-address",
+            "127.0.0.1:8080",
+            "--proxy-endpoints-port",
+            "8081",
+        ])
+        .validate()
+        .is_err());
     }
 
     #[test]
