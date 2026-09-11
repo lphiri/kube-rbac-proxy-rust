@@ -11,3 +11,12 @@ cargo run -- --upstream http://127.0.0.1:8080 --secure-listen-address 127.0.0.1:
 The current listener is plain TCP/HTTP despite retaining the upstream flag name for CLI compatibility. Pingora is configured with rustls and supports TLS upstream connections. Identity is supplied through `X-Remote-User` and `X-Remote-Groups`; static authorization is implemented. Kubernetes TokenReview/SubjectAccessReview, OIDC, client certificates, TLS serving configuration, kubeconfig loading, and HTTP/2 tuning remain parity work.
 
 Verify with `cargo test`.
+
+## Development checks
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo build
+cargo test
+```

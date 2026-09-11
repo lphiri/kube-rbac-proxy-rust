@@ -2,7 +2,6 @@ use crate::config::*;
 use anyhow::{anyhow, Result};
 use http::Request;
 use percent_encoding::percent_decode_str;
-use regex::Regex;
 
 #[derive(Debug, Clone, Default)]
 pub struct Identity {
@@ -94,7 +93,11 @@ fn endpoint_match(pattern: &str, path: &str) -> Option<std::collections::HashMap
     for (p, r) in pp.iter().zip(rp.iter()) {
         if p.starts_with('{') && p.ends_with('}') {
             let n = &p[1..p.len() - 1];
-            if !Regex::new(r"^[A-Za-z][A-Za-z0-9_]*$").unwrap().is_match(n)
+            let valid_name = !n.is_empty()
+                && n.chars().enumerate().all(|(i, c)| {
+                    c.is_ascii_alphabetic() || (i > 0 && (c.is_ascii_digit() || c == '_'))
+                });
+            if !valid_name
                 || out
                     .insert(
                         n.to_string(),
@@ -326,7 +329,6 @@ mod tests {
                         ..Default::default()
                     }],
                 }],
-                ..Default::default()
             }],
             ..Default::default()
         };
@@ -356,7 +358,6 @@ mod tests {
                         ..Default::default()
                     }],
                 }],
-                ..Default::default()
             }],
             ..Default::default()
         };
@@ -383,10 +384,8 @@ mod tests {
                             verb: "create".into(),
                             ..Default::default()
                         },
-                        ..Default::default()
                     }],
                 }],
-                ..Default::default()
             }],
             ..Default::default()
         };

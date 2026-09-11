@@ -121,6 +121,7 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 }
+#[allow(clippy::too_many_arguments)]
 pub fn build_proxy(
     upstream: Uri,
     authz: AuthorizationConfig,
