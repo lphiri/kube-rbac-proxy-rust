@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use kube_rbac_proxy::{
     authn::AuthenticatorChain,
-    cert_auth::ClientCertificateAuthenticator,
+    cert_auth::{ClientCertificateAuthenticator, ClientCertificateCallback},
     config,
     kube::{KubernetesAuthenticator, KubernetesClient},
     oidc::OidcAuthenticator,
@@ -222,9 +222,14 @@ fn main() -> Result<()> {
     );
     let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
-        let mut tls = pingora::listeners::tls::TlsSettings::intermediate(
+        let mut tls = pingora::listeners::tls::TlsSettings::with_callbacks(Box::new(
+            ClientCertificateCallback,
+        ))?;
+        tls.set_certificate_chain_file(
             cert.to_str()
                 .ok_or_else(|| anyhow::anyhow!("TLS certificate path is not UTF-8"))?,
+        )?;
+        tls.set_private_key_file(
             key.to_str()
                 .ok_or_else(|| anyhow::anyhow!("TLS private key path is not UTF-8"))?,
         )?;

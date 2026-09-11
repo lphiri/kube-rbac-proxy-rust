@@ -43,7 +43,7 @@ fn request_from_session(session: &Session) -> Request<()> {
     if let Some(identity) = session
         .digest()
         .and_then(|digest| digest.ssl_digest.as_ref())
-        .and_then(|ssl| ssl.organization.as_deref())
+        .and_then(|ssl| ssl.extension.get::<String>().map(String::as_str))
     {
         request.headers_mut().insert(
             "x-pingora-client-cert-identity",

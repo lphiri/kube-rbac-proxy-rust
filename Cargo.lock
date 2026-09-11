@@ -1190,6 +1190,7 @@ dependencies = [
  "tokio",
  "url",
  "wiremock",
+ "x509-parser",
 ]
 
 [[package]]
