@@ -5,6 +5,7 @@ pub mod config;
 pub mod kube;
 pub mod oidc;
 pub mod pingora_proxy;
+pub mod tls;
 
 pub use authorization::{Attributes, Identity};
 pub use config::ConfigFile;

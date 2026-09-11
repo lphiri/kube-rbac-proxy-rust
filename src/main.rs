@@ -7,6 +7,7 @@ use kube_rbac_proxy::{
     kube::{KubernetesAuthenticator, KubernetesClient},
     oidc::OidcAuthenticator,
     pingora_proxy,
+    tls::ReloadingCertificateResolver,
 };
 use pingora::prelude::*;
 use rustls::{server::WebPkiClientVerifier, RootCertStore};
@@ -255,14 +256,7 @@ fn main() -> Result<()> {
         let mut tls = pingora::listeners::tls::TlsSettings::with_callbacks(Box::new(
             ClientCertificateCallback,
         ))?;
-        tls.set_certificate_chain_file(
-            cert.to_str()
-                .ok_or_else(|| anyhow::anyhow!("TLS certificate path is not UTF-8"))?,
-        )?;
-        tls.set_private_key_file(
-            key.to_str()
-                .ok_or_else(|| anyhow::anyhow!("TLS private key path is not UTF-8"))?,
-        )?;
+        tls.set_cert_resolver(Arc::new(ReloadingCertificateResolver::new(cert, key)));
         tls.enable_h2();
         if let Some(ca_path) = &a.client_ca_file {
             let mut roots = RootCertStore::empty();
