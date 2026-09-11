@@ -118,6 +118,22 @@ impl Args {
         if self.tls_cert_file.is_some() != self.tls_private_key_file.is_some() {
             anyhow::bail!("--tls-cert-file and --tls-private-key-file must be provided together");
         }
+        if self.client_ca_file.is_some() && self.tls_cert_file.is_none() {
+            anyhow::bail!("--client-ca-file requires --tls-cert-file and --tls-private-key-file");
+        }
+        if !matches!(
+            self.tls_min_version.as_str(),
+            "VersionTLS12" | "VersionTLS13"
+        ) {
+            anyhow::bail!("--tls-min-version must be VersionTLS12 or VersionTLS13");
+        }
+        if self
+            .tls_cipher_suites
+            .iter()
+            .any(|cipher| cipher.trim().is_empty())
+        {
+            anyhow::bail!("--tls-cipher-suites cannot contain empty values");
+        }
         if self.oidc_issuer.is_some() && self.oidc_client_id.is_none() {
             anyhow::bail!("--oidc-clientID is required when --oidc-issuer is set");
         }
@@ -317,5 +333,16 @@ mod tests {
     fn help_and_version_flags_are_registered() {
         assert!(Args::try_parse_from(["kube-rbac-proxy", "--help"]).is_err());
         assert!(Args::try_parse_from(["kube-rbac-proxy", "--version"]).is_err());
+    }
+
+    #[test]
+    fn tls_client_ca_and_version_are_validated() {
+        let mut args =
+            Args::try_parse_from(["proxy", "--upstream", "http://localhost:8080"]).unwrap();
+        args.client_ca_file = Some("ca.pem".into());
+        assert!(args.validate().is_err());
+        args.client_ca_file = None;
+        args.tls_min_version = "VersionTLS11".into();
+        assert!(args.validate().is_err());
     }
 }
