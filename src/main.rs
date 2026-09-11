@@ -7,7 +7,7 @@ use kube_rbac_proxy::{
     kube::{KubernetesAuthenticator, KubernetesClient},
     oidc::OidcAuthenticator,
     pingora_proxy,
-    tls::ReloadingCertificateResolver,
+    tls::{self, ReloadingCertificateResolver},
 };
 use pingora::prelude::*;
 use rustls::{server::WebPkiClientVerifier, RootCertStore};
@@ -189,6 +189,7 @@ impl Args {
 fn main() -> Result<()> {
     let a = Args::parse();
     a.validate()?;
+    tls::install_provider(&a.tls_min_version, &a.tls_cipher_suites)?;
     let cfg = a
         .config_file
         .map(|p| config::load(&p))

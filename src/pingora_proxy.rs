@@ -188,14 +188,9 @@ impl ProxyHttp for Proxy {
         let method = session.req_header().method.as_str();
         let path = session.req_header().uri.path();
         if let Some(error) = error {
-            log::warn!(
-                "proxy request method={} path={} failed: {}",
-                method,
-                path,
-                error
-            );
+            log::warn!("proxy request method={method} path={path} failed: {error}");
         } else {
-            log::info!("proxy request method={} path={}", method, path);
+            log::info!("proxy request method={method} path={path}");
         }
     }
 }
