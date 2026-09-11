@@ -23,4 +23,7 @@ cargo test
 
 Build the non-root container image with `docker build -t kube-rbac-proxy-rust .`.
 
-Remaining parity work is tracked in `PLAN.md`: actual TLS cipher/min-version selection on the listener and comprehensive HTTPS/h2c/mTLS and kind-based end-to-end coverage.
+Run the disposable in-cluster authorization smoke test with `tests/e2e/kind.sh`.
+It creates and removes only the `kube-rbac-proxy-rust-e2e` Kind cluster.
+
+Remaining parity work is tracked in `PLAN.md`: actual TLS cipher/min-version selection on the listener, protocol-level HTTPS/h2c/HTTP2/mTLS/streaming tests, and Kind OIDC/client-certificate scenarios.

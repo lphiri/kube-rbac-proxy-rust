@@ -140,7 +140,12 @@ impl KubernetesClient {
         if let Some(encoded) = ca {
             let bytes =
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)?;
-            builder = builder.add_root_certificate(Certificate::from_der(&bytes)?);
+            let certificate = if bytes.starts_with(b"-----BEGIN") {
+                Certificate::from_pem(&bytes)?
+            } else {
+                Certificate::from_der(&bytes)?
+            };
+            builder = builder.add_root_certificate(certificate);
         }
         Ok(Some(Self {
             inner: Arc::new(KubernetesClientInner {
@@ -221,7 +226,7 @@ impl KubernetesClient {
                 &body,
             )
             .await?;
-        if response.status() != StatusCode::OK {
+        if !response.status().is_success() {
             return Err(anyhow!("TokenReview returned {}", response.status()));
         }
         let result: Response = response.json().await?;
@@ -330,7 +335,7 @@ impl KubernetesClient {
                 &body,
             )
             .await?;
-        if response.status() != StatusCode::OK {
+        if !response.status().is_success() {
             return Err(anyhow!(
                 "SubjectAccessReview returned {}",
                 response.status()
@@ -410,7 +415,7 @@ mod tests {
     #[tokio::test]
     async fn token_review_returns_identity() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/apis/authentication.k8s.io/v1/tokenreviews")).respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"status":{"authenticated":true,"user":{"username":"alice","groups":["dev"]}}}))).mount(&server).await;
+        Mock::given(method("POST")).and(path("/apis/authentication.k8s.io/v1/tokenreviews")).respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({"status":{"authenticated":true,"user":{"username":"alice","groups":["dev"]}}}))).mount(&server).await;
         let auth = KubernetesAuthenticator {
             client: client(&server),
             audiences: vec!["proxy".into()],
@@ -431,7 +436,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/apis/authentication.k8s.io/v1/tokenreviews"))
             .respond_with(
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(201)
                     .set_body_json(serde_json::json!({"status":{"authenticated":false}})),
             )
             .mount(&server)
