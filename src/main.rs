@@ -99,6 +99,21 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
     humantime::parse_duration(value).map_err(|e| e.to_string())
 }
 
+fn supported_tls_cipher_suite(value: &str) -> bool {
+    matches!(
+        value,
+        "TLS13_AES_128_GCM_SHA256"
+            | "TLS13_AES_256_GCM_SHA384"
+            | "TLS13_CHACHA20_POLY1305_SHA256"
+            | "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+            | "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+            | "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+            | "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+            | "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+            | "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+    )
+}
+
 impl Args {
     fn validate(&self) -> Result<()> {
         if !self.allow_paths.is_empty() && !self.ignore_paths.is_empty() {
@@ -133,6 +148,13 @@ impl Args {
             .any(|cipher| cipher.trim().is_empty())
         {
             anyhow::bail!("--tls-cipher-suites cannot contain empty values");
+        }
+        if let Some(cipher) = self
+            .tls_cipher_suites
+            .iter()
+            .find(|cipher| !supported_tls_cipher_suite(cipher))
+        {
+            anyhow::bail!("unsupported TLS cipher suite: {cipher}");
         }
         if self.oidc_issuer.is_some() && self.oidc_client_id.is_none() {
             anyhow::bail!("--oidc-clientID is required when --oidc-issuer is set");
@@ -364,6 +386,9 @@ mod tests {
         assert!(args.validate().is_err());
         args.client_ca_file = None;
         args.tls_min_version = "VersionTLS11".into();
+        assert!(args.validate().is_err());
+        args.tls_min_version = "VersionTLS12".into();
+        args.tls_cipher_suites = vec!["not-a-cipher".into()];
         assert!(args.validate().is_err());
     }
 }
