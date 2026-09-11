@@ -2,12 +2,15 @@ use anyhow::Result;
 use clap::Parser;
 use kube_rbac_proxy::{
     authn::AuthenticatorChain,
+    cert_auth::ClientCertificateAuthenticator,
     config,
     kube::{KubernetesAuthenticator, KubernetesClient},
     oidc::OidcAuthenticator,
     pingora_proxy,
 };
 use pingora::prelude::*;
+use rustls::{server::WebPkiClientVerifier, RootCertStore};
+use rustls_pemfile::certs;
 use std::sync::Arc;
 use std::{path::PathBuf, time::Duration};
 
@@ -158,6 +161,10 @@ fn main() -> Result<()> {
         a.kube_api_burst,
     )?;
     let mut authn = Vec::new();
+    if a.client_ca_file.is_some() {
+        authn.push(Arc::new(ClientCertificateAuthenticator::default())
+            as Arc<dyn kube_rbac_proxy::authn::Authenticator>);
+    }
     if let Some(issuer) = &a.oidc_issuer {
         authn.push(Arc::new(OidcAuthenticator::new(
             issuer.clone(),
@@ -193,7 +200,26 @@ fn main() -> Result<()> {
         kube_client,
     );
     let mut service = http_proxy_service(&server.configuration, proxy);
-    service.add_tcp(&a.secure_listen_address);
+    if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
+        let mut tls = pingora::listeners::tls::TlsSettings::intermediate(
+            cert.to_str()
+                .ok_or_else(|| anyhow::anyhow!("TLS certificate path is not UTF-8"))?,
+            key.to_str()
+                .ok_or_else(|| anyhow::anyhow!("TLS private key path is not UTF-8"))?,
+        )?;
+        tls.enable_h2();
+        if let Some(ca_path) = &a.client_ca_file {
+            let mut roots = RootCertStore::empty();
+            for certificate in certs(&mut std::io::BufReader::new(std::fs::File::open(ca_path)?)) {
+                roots.add(certificate?)?;
+            }
+            let verifier = WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+            tls.set_client_cert_verifier(verifier);
+        }
+        service.add_tls_with_settings(&a.secure_listen_address, None, tls);
+    } else {
+        service.add_tcp(&a.secure_listen_address);
+    }
     server.add_service(service);
     server.run_forever();
 }

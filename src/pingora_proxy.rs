@@ -30,7 +30,20 @@ fn matches(pattern: &str, path: &str) -> bool {
     p.len() == 2 && path.starts_with(p[0]) && path.ends_with(p[1])
 }
 fn request_from_session(session: &Session) -> Request<()> {
-    Request::from_parts(session.req_header().as_owned_parts(), ())
+    let mut request = Request::from_parts(session.req_header().as_owned_parts(), ());
+    if let Some(identity) = session
+        .digest()
+        .and_then(|digest| digest.ssl_digest.as_ref())
+        .and_then(|ssl| ssl.organization.as_deref())
+    {
+        request.headers_mut().insert(
+            "x-pingora-client-cert-identity",
+            identity
+                .parse()
+                .expect("certificate identity is valid ASCII"),
+        );
+    }
+    request
 }
 
 #[async_trait]

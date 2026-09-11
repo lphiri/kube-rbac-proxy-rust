@@ -1,5 +1,6 @@
 pub mod authn;
 pub mod authorization;
+pub mod cert_auth;
 pub mod config;
 pub mod kube;
 pub mod oidc;
