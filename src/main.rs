@@ -219,7 +219,7 @@ fn main() -> Result<()> {
         a.upstream_client_cert_file,
         a.upstream_client_key_file,
     );
-    let mut service = http_proxy_service(&server.configuration, proxy);
+    let mut service = http_proxy_service(&server.configuration, proxy.clone());
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {
         let mut tls = pingora::listeners::tls::TlsSettings::intermediate(
             cert.to_str()
@@ -241,6 +241,11 @@ fn main() -> Result<()> {
         service.add_tcp(&a.secure_listen_address);
     }
     server.add_service(service);
+    if a.proxy_endpoints_port != 0 {
+        let mut operational = http_proxy_service(&server.configuration, proxy);
+        operational.add_tcp(&format!("0.0.0.0:{}", a.proxy_endpoints_port));
+        server.add_service(operational);
+    }
     server.run_forever();
 }
 

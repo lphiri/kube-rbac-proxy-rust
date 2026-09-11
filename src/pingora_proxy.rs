@@ -2,6 +2,7 @@ use crate::{
     authn::AuthenticatorChain, authorization, config::AuthorizationConfig, kube::KubernetesClient,
 };
 use async_trait::async_trait;
+use bytes::Bytes;
 use http::{Request, Uri};
 use pingora::prelude::*;
 use pingora::utils::tls::CertKey;
@@ -61,7 +62,20 @@ impl ProxyHttp for Proxy {
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
         let path = session.req_header().uri.path().to_string();
         if path == "/healthz" {
-            session.respond_error(200).await?;
+            session
+                .respond_error_with_body(200, Bytes::from_static(b"ok\n"))
+                .await?;
+            return Ok(true);
+        }
+        if path == "/metrics" {
+            session
+                .respond_error_with_body(
+                    200,
+                    Bytes::from_static(
+                        b"# HELP kube_rbac_proxy_requests_total Proxy requests\n# TYPE kube_rbac_proxy_requests_total counter\nkube_rbac_proxy_requests_total 0\n",
+                    ),
+                )
+                .await?;
             return Ok(true);
         }
         if !self.allow.is_empty() && !self.allow.iter().any(|p| matches(p, &path)) {
