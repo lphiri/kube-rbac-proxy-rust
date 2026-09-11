@@ -20,6 +20,11 @@ openssl req -newkey rsa:2048 -nodes -subj /CN=localhost \
 openssl x509 -req -in "$WORK/server.csr" -CA "$WORK/ca.pem" -CAkey "$WORK/ca.key" \
   -CAcreateserial -days 1 -out "$WORK/server.pem" \
   -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1') >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -subj /CN=proxy-client \
+  -keyout "$WORK/client.key" -out "$WORK/client.csr" >/dev/null 2>&1
+openssl x509 -req -in "$WORK/client.csr" -CA "$WORK/ca.pem" -CAkey "$WORK/ca.key" \
+  -CAcreateserial -days 1 -out "$WORK/client.pem" \
+  -extfile <(printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth') >/dev/null 2>&1
 UPSTREAM_DIR="$(mktemp -d /tmp/kube-rbac-proxy-https-upstream.XXXXXX)"
 python3 - "$WORK" "$UPSTREAM_DIR" <<'PY' &
 import http.server
@@ -41,6 +46,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 19443), Handler)
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain(certs / "server.pem", certs / "server.key")
+context.verify_mode = ssl.CERT_REQUIRED
+context.load_verify_locations(cafile=certs / "ca.pem")
 server.socket = context.wrap_socket(server.socket, server_side=True)
 server.serve_forever()
 PY
@@ -49,6 +56,7 @@ sleep 1
 cargo build --quiet --locked
 RUST_LOG=debug "$ROOT/target/debug/kube-rbac-proxy" \
   --upstream https://localhost:19443 --upstream-ca-file "$WORK/ca.pem" \
+  --upstream-client-cert-file "$WORK/client.pem" --upstream-client-key-file "$WORK/client.key" \
   --secure-listen-address 127.0.0.1:18443 --ignore-paths '*' \
   >"$WORK/proxy.log" 2>&1 &
 PROXY_PID=$!
