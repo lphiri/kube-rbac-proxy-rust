@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use kube_rbac_proxy::{config, pingora_proxy};
+use kube_rbac_proxy::{authn::AuthenticatorChain, config, pingora_proxy};
 use pingora::prelude::*;
 use std::{path::PathBuf, time::Duration};
 
@@ -156,6 +156,7 @@ fn main() -> Result<()> {
         a.auth_header_user_field_name,
         a.auth_header_groups_field_name,
         a.auth_header_groups_field_separator,
+        AuthenticatorChain::default(),
     );
     let mut service = http_proxy_service(&server.configuration, proxy);
     service.add_tcp(&a.secure_listen_address);

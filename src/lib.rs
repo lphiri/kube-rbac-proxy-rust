@@ -1,3 +1,4 @@
+pub mod authn;
 pub mod authorization;
 pub mod config;
 pub mod pingora_proxy;

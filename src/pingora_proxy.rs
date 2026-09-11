@@ -1,7 +1,4 @@
-use crate::{
-    authorization::{self, Identity},
-    config::AuthorizationConfig,
-};
+use crate::{authn::AuthenticatorChain, authorization, config::AuthorizationConfig};
 use async_trait::async_trait;
 use http::{Request, Uri};
 use pingora::prelude::*;
@@ -16,9 +13,10 @@ pub struct Proxy {
     pub user_header: String,
     pub groups_header: String,
     pub group_separator: String,
+    pub authenticators: AuthenticatorChain,
 }
 pub struct RequestContext {
-    pub identity: Option<Identity>,
+    pub identity: Option<crate::authorization::Identity>,
 }
 
 fn matches(pattern: &str, path: &str) -> bool {
@@ -27,25 +25,6 @@ fn matches(pattern: &str, path: &str) -> bool {
     }
     let p: Vec<_> = pattern.split('*').collect();
     p.len() == 2 && path.starts_with(p[0]) && path.ends_with(p[1])
-}
-fn identity(session: &Session) -> Option<Identity> {
-    let name = session
-        .get_header("x-remote-user")?
-        .to_str()
-        .ok()?
-        .to_string();
-    if name.is_empty() {
-        return None;
-    }
-    let groups = session
-        .get_header("x-remote-groups")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .split('|')
-        .filter(|v| !v.is_empty())
-        .map(str::to_string)
-        .collect();
-    Some(Identity { name, groups })
 }
 fn request_from_session(session: &Session) -> Request<()> {
     Request::from_parts(session.req_header().as_owned_parts(), ())
@@ -66,11 +45,15 @@ impl ProxyHttp for Proxy {
         if self.ignore.iter().any(|p| matches(p, &path)) {
             return Ok(false);
         }
-        let Some(user) = identity(session) else {
+        let request = request_from_session(session);
+        let Some(user) = self
+            .authenticators
+            .authenticate(&request)
+            .map_err(|e| pingora::Error::explain(ErrorType::InternalError, e.to_string()))?
+        else {
             session.respond_error(401).await?;
             return Ok(true);
         };
-        let request = request_from_session(session);
         let attrs = authorization::attributes(&self.authz, &request, user.clone())
             .map_err(|e| pingora::Error::explain(ErrorType::InternalError, e.to_string()))?;
         if attrs.is_empty()
@@ -131,6 +114,7 @@ pub fn build_proxy(
     user_header: String,
     groups_header: String,
     group_separator: String,
+    authenticators: AuthenticatorChain,
 ) -> Proxy {
     Proxy {
         upstream,
@@ -141,5 +125,6 @@ pub fn build_proxy(
         user_header,
         groups_header,
         group_separator,
+        authenticators,
     }
 }
