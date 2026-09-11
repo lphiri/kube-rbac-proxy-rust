@@ -8,7 +8,7 @@ Run it with:
 cargo run -- --upstream http://127.0.0.1:8080 --secure-listen-address 127.0.0.1:8443 --config-file ./authorization.yaml
 ```
 
-The current listener is plain TCP/HTTP despite retaining the upstream flag name for CLI compatibility. Pingora is configured with rustls and supports TLS upstream connections. Identity is supplied through `X-Remote-User` and `X-Remote-Groups`; static authorization is implemented. Kubernetes TokenReview/SubjectAccessReview, OIDC, client certificates, TLS serving configuration, kubeconfig loading, and HTTP/2 tuning remain parity work.
+The runtime uses Pingora with rustls. It supports Kubernetes TokenReview/SubjectAccessReview, OIDC discovery/JWKS authentication, client-CA TLS authentication, TLS serving, kubeconfig loading, upstream timeouts, h2c, and upstream mTLS. Static and Kubernetes authorization are evaluated before upstream forwarding; identity headers are injected only after successful authentication and authorization.
 
 Verify with `cargo test`.
 
@@ -20,3 +20,5 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo build
 cargo test
 ```
+
+Build the non-root container image with `docker build -t kube-rbac-proxy-rust .`.
