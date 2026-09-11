@@ -1,10 +1,12 @@
 use crate::authorization::Identity;
 use anyhow::Result;
+use async_trait::async_trait;
 use http::Request;
 use std::sync::Arc;
 
+#[async_trait]
 pub trait Authenticator: Send + Sync {
-    fn authenticate(&self, request: &Request<()>) -> Result<Option<Identity>>;
+    async fn authenticate(&self, request: &Request<()>) -> Result<Option<Identity>>;
 }
 
 #[derive(Clone, Default)]
@@ -18,9 +20,9 @@ impl AuthenticatorChain {
             authenticators: Arc::new(authenticators),
         }
     }
-    pub fn authenticate(&self, request: &Request<()>) -> Result<Option<Identity>> {
+    pub async fn authenticate(&self, request: &Request<()>) -> Result<Option<Identity>> {
         for authenticator in self.authenticators.iter() {
-            if let Some(identity) = authenticator.authenticate(request)? {
+            if let Some(identity) = authenticator.authenticate(request).await? {
                 return Ok(Some(identity));
             }
         }
@@ -32,22 +34,24 @@ impl AuthenticatorChain {
 mod tests {
     use super::*;
     struct Fixed(Option<Identity>);
+    #[async_trait]
     impl Authenticator for Fixed {
-        fn authenticate(&self, _: &Request<()>) -> Result<Option<Identity>> {
+        async fn authenticate(&self, _: &Request<()>) -> Result<Option<Identity>> {
             Ok(self.0.clone())
         }
     }
     struct Failing;
+    #[async_trait]
     impl Authenticator for Failing {
-        fn authenticate(&self, _: &Request<()>) -> Result<Option<Identity>> {
+        async fn authenticate(&self, _: &Request<()>) -> Result<Option<Identity>> {
             Err(anyhow::anyhow!("authentication backend failed"))
         }
     }
     fn request() -> Request<()> {
         Request::builder().uri("/metrics").body(()).unwrap()
     }
-    #[test]
-    fn first_successful_authenticator_wins() {
+    #[tokio::test]
+    async fn first_successful_authenticator_wins() {
         let c = AuthenticatorChain::new(vec![
             Arc::new(Fixed(None)),
             Arc::new(Fixed(Some(Identity {
@@ -59,19 +63,24 @@ mod tests {
                 groups: vec![],
             }))),
         ]);
-        assert_eq!(c.authenticate(&request()).unwrap().unwrap().name, "alice");
+        assert_eq!(
+            c.authenticate(&request()).await.unwrap().unwrap().name,
+            "alice"
+        );
     }
-    #[test]
-    fn empty_chain_returns_unauthenticated() {
+    #[tokio::test]
+    async fn empty_chain_returns_unauthenticated() {
         assert!(AuthenticatorChain::default()
             .authenticate(&request())
+            .await
             .unwrap()
             .is_none());
     }
-    #[test]
-    fn backend_errors_are_propagated() {
+    #[tokio::test]
+    async fn backend_errors_are_propagated() {
         assert!(AuthenticatorChain::new(vec![Arc::new(Failing)])
             .authenticate(&request())
+            .await
             .unwrap_err()
             .to_string()
             .contains("backend failed"));

@@ -1,7 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
-use kube_rbac_proxy::{authn::AuthenticatorChain, config, pingora_proxy};
+use kube_rbac_proxy::{
+    authn::AuthenticatorChain,
+    config,
+    kube::{KubernetesAuthenticator, KubernetesClient},
+    pingora_proxy,
+};
 use pingora::prelude::*;
+use std::sync::Arc;
 use std::{path::PathBuf, time::Duration};
 
 #[derive(Parser, Debug)]
@@ -145,6 +151,18 @@ fn main() -> Result<()> {
         .map(|p| config::load(&p))
         .transpose()?
         .unwrap_or_default();
+    let kube_client = KubernetesClient::from_configuration(
+        a.kubeconfig.as_deref(),
+        a.kube_api_qps,
+        a.kube_api_burst,
+    )?;
+    let authenticators = match &kube_client {
+        Some(client) => AuthenticatorChain::new(vec![Arc::new(KubernetesAuthenticator {
+            client: client.clone(),
+            audiences: a.auth_token_audiences.clone(),
+        })]),
+        None => AuthenticatorChain::default(),
+    };
     let mut server = Server::new(None)?;
     server.bootstrap();
     let proxy = pingora_proxy::build_proxy(
@@ -156,7 +174,8 @@ fn main() -> Result<()> {
         a.auth_header_user_field_name,
         a.auth_header_groups_field_name,
         a.auth_header_groups_field_separator,
-        AuthenticatorChain::default(),
+        authenticators,
+        kube_client,
     );
     let mut service = http_proxy_service(&server.configuration, proxy);
     service.add_tcp(&a.secure_listen_address);

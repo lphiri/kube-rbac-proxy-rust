@@ -1,4 +1,6 @@
-use crate::{authn::AuthenticatorChain, authorization, config::AuthorizationConfig};
+use crate::{
+    authn::AuthenticatorChain, authorization, config::AuthorizationConfig, kube::KubernetesClient,
+};
 use async_trait::async_trait;
 use http::{Request, Uri};
 use pingora::prelude::*;
@@ -14,6 +16,7 @@ pub struct Proxy {
     pub groups_header: String,
     pub group_separator: String,
     pub authenticators: AuthenticatorChain,
+    pub kube_client: Option<KubernetesClient>,
 }
 pub struct RequestContext {
     pub identity: Option<crate::authorization::Identity>,
@@ -49,6 +52,7 @@ impl ProxyHttp for Proxy {
         let Some(user) = self
             .authenticators
             .authenticate(&request)
+            .await
             .map_err(|e| pingora::Error::explain(ErrorType::InternalError, e.to_string()))?
         else {
             session.respond_error(401).await?;
@@ -56,13 +60,24 @@ impl ProxyHttp for Proxy {
         };
         let attrs = authorization::attributes(&self.authz, &request, user.clone())
             .map_err(|e| pingora::Error::explain(ErrorType::InternalError, e.to_string()))?;
-        if attrs.is_empty()
-            || attrs
-                .iter()
-                .any(|a| !authorization::static_allows(&self.authz.static_rules, a))
-        {
+        if attrs.is_empty() {
             session.respond_error(403).await?;
             return Ok(true);
+        }
+        for attr in &attrs {
+            if authorization::static_allows(&self.authz.static_rules, attr) {
+                continue;
+            }
+            let allowed = match &self.kube_client {
+                Some(client) => client.authorize(attr).await.map_err(|e| {
+                    pingora::Error::explain(ErrorType::InternalError, e.to_string())
+                })?,
+                None => false,
+            };
+            if !allowed {
+                session.respond_error(403).await?;
+                return Ok(true);
+            }
         }
         ctx.identity = Some(user);
         Ok(false)
@@ -115,6 +130,7 @@ pub fn build_proxy(
     groups_header: String,
     group_separator: String,
     authenticators: AuthenticatorChain,
+    kube_client: Option<KubernetesClient>,
 ) -> Proxy {
     Proxy {
         upstream,
@@ -126,5 +142,6 @@ pub fn build_proxy(
         groups_header,
         group_separator,
         authenticators,
+        kube_client,
     }
 }
