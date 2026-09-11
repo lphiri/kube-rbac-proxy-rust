@@ -198,6 +198,10 @@ fn main() -> Result<()> {
         a.auth_header_groups_field_separator,
         authenticators,
         kube_client,
+        a.upstream_timeout,
+        a.upstream_force_h2c,
+        a.upstream_client_cert_file,
+        a.upstream_client_key_file,
     );
     let mut service = http_proxy_service(&server.configuration, proxy);
     if let (Some(cert), Some(key)) = (&a.tls_cert_file, &a.tls_private_key_file) {

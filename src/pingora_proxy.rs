@@ -4,6 +4,9 @@ use crate::{
 use async_trait::async_trait;
 use http::{Request, Uri};
 use pingora::prelude::*;
+use pingora::utils::tls::CertKey;
+use rustls_pemfile::{certs, private_key};
+use std::{fs::File, io::BufReader, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct Proxy {
@@ -17,6 +20,9 @@ pub struct Proxy {
     pub group_separator: String,
     pub authenticators: AuthenticatorChain,
     pub kube_client: Option<KubernetesClient>,
+    pub upstream_timeout: Duration,
+    pub upstream_force_h2c: bool,
+    pub upstream_client_cert_key: Option<Arc<CertKey>>,
 }
 pub struct RequestContext {
     pub identity: Option<crate::authorization::Identity>,
@@ -103,16 +109,21 @@ impl ProxyHttp for Proxy {
         let host = self.upstream.host().ok_or_else(|| {
             pingora::Error::explain(ErrorType::InternalError, "upstream has no host")
         })?;
+        let h2c = self.upstream.scheme_str() == Some("h2c") || self.upstream_force_h2c;
         let tls = self.upstream.scheme_str() == Some("https");
         let port = self
             .upstream
             .port_u16()
             .unwrap_or(if tls { 443 } else { 80 });
-        Ok(Box::new(HttpPeer::new(
-            format!("{host}:{port}"),
-            tls,
-            host.to_string(),
-        )))
+        let mut peer = HttpPeer::new(format!("{host}:{port}"), tls, host.to_string());
+        peer.options.connection_timeout = Some(self.upstream_timeout);
+        peer.options.read_timeout = Some(self.upstream_timeout);
+        peer.options.write_timeout = Some(self.upstream_timeout);
+        if h2c {
+            peer.options.set_http_version(2, 2);
+        }
+        peer.client_cert_key = self.upstream_client_cert_key.clone();
+        Ok(Box::new(peer))
     }
     async fn upstream_request_filter(
         &self,
@@ -144,7 +155,28 @@ pub fn build_proxy(
     group_separator: String,
     authenticators: AuthenticatorChain,
     kube_client: Option<KubernetesClient>,
+    upstream_timeout: Duration,
+    upstream_force_h2c: bool,
+    upstream_client_cert_file: Option<std::path::PathBuf>,
+    upstream_client_key_file: Option<std::path::PathBuf>,
 ) -> Proxy {
+    let upstream_client_cert_key = match (upstream_client_cert_file, upstream_client_key_file) {
+        (Some(cert), Some(key)) => {
+            let certs = certs(&mut BufReader::new(
+                File::open(cert).expect("upstream certificate"),
+            ))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("upstream certificate PEM");
+            let key = private_key(&mut BufReader::new(File::open(key).expect("upstream key")))
+                .expect("upstream key PEM")
+                .expect("upstream private key");
+            Some(Arc::new(CertKey::new(
+                certs.into_iter().map(|x| x.to_vec()).collect(),
+                key.secret_der().to_vec(),
+            )))
+        }
+        _ => None,
+    };
     Proxy {
         upstream,
         authz,
@@ -156,5 +188,8 @@ pub fn build_proxy(
         group_separator,
         authenticators,
         kube_client,
+        upstream_timeout,
+        upstream_force_h2c,
+        upstream_client_cert_key,
     }
 }
