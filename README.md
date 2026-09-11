@@ -26,4 +26,8 @@ Build the non-root container image with `docker build -t kube-rbac-proxy-rust .`
 Run the disposable in-cluster authorization smoke test with `tests/e2e/kind.sh`.
 It creates and removes only the `kube-rbac-proxy-rust-e2e` Kind cluster.
 
-Remaining parity work is tracked in `PLAN.md`: protocol-level HTTPS/h2c/HTTP2/mTLS/streaming tests and Kind OIDC/client-certificate scenarios.
+The completion audit is tracked in `PARITY_MATRIX.md`; `PLAN.md` records the
+original staged requirements. Protocol harnesses cover HTTPS, h2c, upstream and
+downstream HTTP/2, mTLS, and streaming responses. OIDC behavior is covered with
+a deterministic local issuer/JWKS fixture so the Kind smoke test does not depend
+on an external identity provider.

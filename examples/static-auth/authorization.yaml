@@ -1,0 +1,7 @@
+authorization:
+  static:
+  - user: alice
+    resourceRequest: true
+    resource: pods
+    namespace: default
+    verb: get

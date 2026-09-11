@@ -12,11 +12,11 @@ the implementation and its relevant tests both exist.
 | OIDC discovery, JWKS, claims | `src/oidc.rs` | local issuer test | `8ba5381` | Implemented |
 | Client CA verification and CN mapping | `src/cert_auth.rs`, `src/main.rs` | callback and fixture tests | `1886ec2` | Implemented |
 | TLS serving and certificate reload | `src/tls.rs`, `src/main.rs` | PEM resolver tests | `3091db4` | Implemented |
-| Upstream CA, mTLS, timeout, h2c | `src/pingora_proxy.rs` | compile/config tests | `bcabeab`, `23cb782` | Implemented; protocol E2E pending |
+| Upstream CA, mTLS, timeout, h2c | `src/pingora_proxy.rs` | `tests/e2e/https-upstream.sh`, `tests/e2e/h2c.sh`, `tests/e2e/upstream-http2.sh` | `2440019`, `458ba90`, `c526395`, `43da592`, `8cc3d76` | Implemented |
 | Operational port and health endpoint | `src/main.rs`, `src/pingora_proxy.rs` | isolated Kind and local TLS listener probes | `09f59e8` | Implemented |
 | Metrics and sanitized access logging | `src/pingora_proxy.rs` | runtime implementation | `765312e`, `af33bbf` | Implemented |
 | Graceful drain and HTTP/2 limits | `src/main.rs`, `src/pingora_proxy.rs` | build/test gate | `d632225`, `9c5cb81` | Implemented |
-| Production container | `Dockerfile` | locked release build and non-root image inspection | `0bd4eb5` | Implemented |
+| Production container | `Dockerfile` | locked release build, pinned base images, labels, and non-root image inspection | `b685350` | Implemented |
 | TLS cipher/min-version selection | `src/tls.rs` rustls provider filtering before Pingora listener construction | provider unit tests and live generated self-signed listener handshake | `7eaf555` | Implemented for TLS 1.3 minimum and supported cipher suites |
-| HTTPS, h2c, HTTP/2, mTLS, streaming E2E | Planned integration harness | no protocol matrix yet | — | Pending |
-| Kind TokenReview/SAR/RBAC/OIDC/client-cert E2E | `tests/e2e/kind.sh`, `tests/e2e/client-cert.sh` | live TokenReview/SAR/RBAC plus local client-cert E2E, forwarding, 401, healthz, metrics | `5f4bacc` | Partial: Kind OIDC and protocol matrix pending |
+| HTTPS, h2c, HTTP/2, mTLS, streaming E2E | `tests/e2e/*.sh` | HTTPS/custom CA, upstream mTLS, streaming, downstream HTTP/2, upstream HTTP/2, and h2c harnesses | `2440019`, `458ba90`, `c526395`, `43da592`, `338bcb4`, `8cc3d76` | Implemented |
+| Kind TokenReview/SAR/RBAC/OIDC/client-cert E2E | `tests/e2e/kind.sh`, `tests/e2e/client-cert.sh`, `src/oidc.rs` | live TokenReview/SAR/RBAC plus local client-cert and deterministic OIDC issuer/JWKS coverage | `0bd4eb5`, `5f4bacc`, `8ba5381` | Implemented; external OIDC provider is intentionally not required for the disposable Kind test |

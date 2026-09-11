@@ -1,0 +1,6 @@
+authorization:
+  resourceAttributes:
+    apiVersion: v1
+    resource: pods
+    namespace: default
+    verb: get

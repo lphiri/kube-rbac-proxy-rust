@@ -172,11 +172,11 @@ kubectl -n "$NAMESPACE" port-forward service/proxy 18443:8443 18081:8081 >/tmp/k
 PORT_FORWARD_PID=$!
 trap 'kill "$PORT_FORWARD_PID" >/dev/null 2>&1 || true; cleanup' EXIT
 for _ in $(seq 1 30); do
-  if curl --silent --fail http://127.0.0.1:18081/healthz >/dev/null; then break; fi
+  if curl --silent --insecure --fail https://127.0.0.1:18081/healthz >/dev/null; then break; fi
   sleep 1
 done
 
-if curl --silent --show-error --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18443/echo | grep -qx 401; then
+if curl --silent --insecure --show-error --output /dev/null --write-out '%{http_code}' https://127.0.0.1:18443/echo | grep -qx 401; then
   :
 else
   echo "expected unauthenticated request to return HTTP 401" >&2
@@ -185,12 +185,12 @@ fi
 
 TOKEN="$(kubectl -n "$NAMESPACE" create token proxy)"
 STATUS="$(curl --silent --show-error --output /tmp/kube-rbac-proxy-rust-response.txt --write-out '%{http_code}' \
-  -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18443/hostname)"
+  --insecure -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18443/hostname)"
 echo "authenticated request returned HTTP $STATUS"
 if test "$STATUS" != 200; then
   kubectl -n "$NAMESPACE" logs deployment/proxy --tail=80 || true
   exit 1
 fi
 test "$STATUS" = 200
-curl --silent --fail http://127.0.0.1:18081/metrics | grep -q '^kube_rbac_proxy_requests_total '
+curl --silent --insecure --fail https://127.0.0.1:18081/metrics | grep -q '^kube_rbac_proxy_requests_total '
 echo "Kind E2E passed: TokenReview, SubjectAccessReview, forwarding, auth rejection, healthz, and metrics"
