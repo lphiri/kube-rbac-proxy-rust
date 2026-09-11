@@ -8,6 +8,14 @@ use rustls::{
 use rustls_pemfile::{certs, private_key};
 use std::{fmt, fs::File, io::BufReader, path::PathBuf, sync::Arc};
 
+pub fn normalize_min_version(value: &str) -> Option<&'static str> {
+    match value {
+        "VersionTLS12" | "TLS1.2" => Some("VersionTLS12"),
+        "VersionTLS13" | "TLS1.3" => Some("VersionTLS13"),
+        _ => None,
+    }
+}
+
 /// Build the rustls provider used by Pingora's listener.
 ///
 /// Pingora 0.9 selects TLS 1.2 and TLS 1.3 at the listener builder level. A
@@ -121,6 +129,13 @@ mod tests {
             format!("{:?}", provider.cipher_suites[0].suite()),
             "TLS13_AES_128_GCM_SHA256"
         );
+    }
+
+    #[test]
+    fn minimum_version_accepts_go_and_short_aliases() {
+        assert_eq!(normalize_min_version("VersionTLS12"), Some("VersionTLS12"));
+        assert_eq!(normalize_min_version("TLS1.3"), Some("VersionTLS13"));
+        assert_eq!(normalize_min_version("TLS1.1"), None);
     }
 
     #[test]

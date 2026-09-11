@@ -137,11 +137,10 @@ impl Args {
         if self.client_ca_file.is_some() && self.tls_cert_file.is_none() {
             anyhow::bail!("--client-ca-file requires --tls-cert-file and --tls-private-key-file");
         }
-        if !matches!(
-            self.tls_min_version.as_str(),
-            "VersionTLS12" | "VersionTLS13"
-        ) {
-            anyhow::bail!("--tls-min-version must be VersionTLS12 or VersionTLS13");
+        if tls::normalize_min_version(&self.tls_min_version).is_none() {
+            anyhow::bail!(
+                "--tls-min-version must be VersionTLS12, VersionTLS13, TLS1.2, or TLS1.3"
+            );
         }
         if self
             .tls_cipher_suites
@@ -191,7 +190,9 @@ impl Args {
 fn main() -> Result<()> {
     let a = Args::parse();
     a.validate()?;
-    tls::install_provider(&a.tls_min_version, &a.tls_cipher_suites)?;
+    let tls_min_version = tls::normalize_min_version(&a.tls_min_version)
+        .expect("TLS minimum version was validated above");
+    tls::install_provider(tls_min_version, &a.tls_cipher_suites)?;
     let cfg = a
         .config_file
         .map(|p| config::load(&p))
