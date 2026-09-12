@@ -1,1 +1,3 @@
 /target/
+/bench/results.csv
+/bench/__pycache__/
