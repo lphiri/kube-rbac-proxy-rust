@@ -33,6 +33,7 @@ when those costs are the subject of the comparison. Compare several repetitions
 under low system load; do not treat one run as a statistically significant
 result.
 
-The Rust binary defaults to one Pingora worker unless configured otherwise in
-older builds. Current builds use all available CPUs by default, matching Go's
-normal `GOMAXPROCS` behavior; use `--worker-threads` for controlled experiments.
+The Rust binary defaults to up to four Pingora workers to avoid multiplying
+per-worker runtime and connection-pool memory on high-core machines. Use
+`--worker-threads` for controlled experiments or larger deployments; Go keeps
+its normal `GOMAXPROCS` default unless `GO_MAX_PROCS` is set.

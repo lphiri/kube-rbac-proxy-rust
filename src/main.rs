@@ -106,6 +106,10 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
     humantime::parse_duration(value).map_err(|e| e.to_string())
 }
 
+fn default_worker_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |parallelism| parallelism.get().min(4))
+}
+
 fn supported_tls_cipher_suite(value: &str) -> bool {
     matches!(
         value,
@@ -243,9 +247,7 @@ fn main() -> Result<()> {
     let authenticators = AuthenticatorChain::new(authn);
     let mut server = Server::new(None)?;
     if let Some(configuration) = Arc::get_mut(&mut server.configuration) {
-        configuration.threads = a
-            .worker_threads
-            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |x| x.get()));
+        configuration.threads = a.worker_threads.unwrap_or_else(default_worker_threads);
         configuration.grace_period_seconds = Some(30);
         configuration.graceful_shutdown_timeout_seconds = Some(30);
     }
@@ -449,6 +451,11 @@ mod tests {
         ])
         .validate()
         .is_ok());
+    }
+
+    #[test]
+    fn default_worker_threads_are_bounded() {
+        assert!((1..=4).contains(&default_worker_threads()));
     }
 
     #[test]
