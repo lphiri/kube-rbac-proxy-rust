@@ -97,6 +97,9 @@ struct Args {
     http2_max_concurrent_streams: u32,
     #[arg(long, default_value_t = 256 * 1024)]
     http2_max_size: u32,
+    /// Number of Pingora worker threads. Defaults to the available CPUs.
+    #[arg(long)]
+    worker_threads: Option<usize>,
 }
 
 fn parse_duration(value: &str) -> Result<Duration, String> {
@@ -181,6 +184,9 @@ impl Args {
         if self.http2_max_concurrent_streams == 0 || self.http2_max_size == 0 {
             anyhow::bail!("HTTP/2 limits must be positive");
         }
+        if self.worker_threads == Some(0) {
+            anyhow::bail!("--worker-threads must be positive");
+        }
         if self.secure_listen_address.is_none() && self.insecure_listen_address.is_none() {
             anyhow::bail!(
                 "at least one of --secure-listen-address or --insecure-listen-address is required"
@@ -237,6 +243,9 @@ fn main() -> Result<()> {
     let authenticators = AuthenticatorChain::new(authn);
     let mut server = Server::new(None)?;
     if let Some(configuration) = Arc::get_mut(&mut server.configuration) {
+        configuration.threads = a
+            .worker_threads
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |x| x.get()));
         configuration.grace_period_seconds = Some(30);
         configuration.graceful_shutdown_timeout_seconds = Some(30);
     }
@@ -421,6 +430,25 @@ mod tests {
             "not-a-duration"
         ])
         .is_err());
+    }
+
+    #[test]
+    fn worker_thread_count_must_be_positive() {
+        let args = parse(&[
+            "--worker-threads",
+            "0",
+            "--insecure-listen-address",
+            "127.0.0.1:8080",
+        ]);
+        assert!(args.validate().is_err());
+        assert!(parse(&[
+            "--worker-threads",
+            "2",
+            "--insecure-listen-address",
+            "127.0.0.1:8080",
+        ])
+        .validate()
+        .is_ok());
     }
 
     #[test]

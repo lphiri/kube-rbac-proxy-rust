@@ -15,6 +15,8 @@ KEEP_WORK_DIR="${KEEP_WORK_DIR:-0}"
 RUST_BINARY="${RUST_BINARY:-$RUST_REPO/target/release/kube-rbac-proxy}"
 GO_BINARY="${GO_BINARY:-$GO_REPO/bin/kube-rbac-proxy-bench}"
 UPSTREAM_PORT="${UPSTREAM_PORT:-19090}"
+RUST_WORKER_THREADS="${RUST_WORKER_THREADS:-}"
+GO_MAX_PROCS="${GO_MAX_PROCS:-}"
 
 usage() {
     cat <<'EOF'
@@ -23,6 +25,7 @@ Usage: bench/compare.sh [options]
 Environment variables control the run:
   REQUESTS=10000 CONCURRENCY=32 WARMUP=200
   GO_REPO=../kube-rbac-proxy RUST_BINARY=... GO_BINARY=...
+  RUST_WORKER_THREADS=4 GO_MAX_PROCS=4
   OUTPUT=bench/results.csv
 
 Options:
@@ -66,7 +69,8 @@ fi
 [[ -x "$RUST_BINARY" ]] || { echo "Rust binary not executable: $RUST_BINARY" >&2; exit 1; }
 [[ -x "$GO_BINARY" ]] || { echo "Go binary not executable: $GO_BINARY" >&2; exit 1; }
 
-python3 "$SCRIPT_DIR/upstream.py" --port "$UPSTREAM_PORT" >"$WORK_DIR/upstream.log" 2>&1 &
+go build -o "$WORK_DIR/upstream" "$SCRIPT_DIR/upstream.go"
+"$WORK_DIR/upstream" --address "127.0.0.1:$UPSTREAM_PORT" >"$WORK_DIR/upstream.log" 2>&1 &
 UPSTREAM_PID=$!
 for _ in $(seq 1 50); do
     if curl --silent --fail "http://127.0.0.1:$UPSTREAM_PORT/benchmark" >/dev/null; then break; fi
@@ -104,7 +108,14 @@ fi
 run_one() {
     local name="$1" binary="$2" port="$3"
     local load_file="$WORK_DIR/$name.ab" log_file="$WORK_DIR/$name.log"
-    "$binary" \
+    local -a command=("$binary")
+    if [[ "$name" == "rust" && -n "$RUST_WORKER_THREADS" ]]; then
+        command+=(--worker-threads "$RUST_WORKER_THREADS")
+    fi
+    if [[ "$name" == "go" && -n "$GO_MAX_PROCS" ]]; then
+        command=(env "GOMAXPROCS=$GO_MAX_PROCS" "${command[@]}")
+    fi
+    "${command[@]}" \
         --upstream "http://127.0.0.1:$UPSTREAM_PORT" \
         --kubeconfig "$WORK_DIR/kubeconfig" \
         --insecure-listen-address "127.0.0.1:$port" \
@@ -121,7 +132,7 @@ run_one() {
     kill "$PROXY_PID" >/dev/null 2>&1 || true
     wait "$PROXY_PID" >/dev/null 2>&1 || true
     PROXY_PID=""
-    "$binary" \
+    "${command[@]}" \
         --upstream "http://127.0.0.1:$UPSTREAM_PORT" \
         --kubeconfig "$WORK_DIR/kubeconfig" \
         --insecure-listen-address "127.0.0.1:$port" \
