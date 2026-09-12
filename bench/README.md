@@ -19,6 +19,9 @@ For a quick smoke test, use `REQUESTS=100 CONCURRENCY=4 WARMUP=10`. Use
 `--no-build` when repeating a run with already-built binaries. Results append to
 `bench/results.csv`, which is intentionally ignored by Git.
 
+Set `KEEP_WORK_DIR=1` after a failure to retain ApacheBench output and proxy
+logs for diagnosis.
+
 This is a proxy data-plane benchmark: requests use `--ignore-paths /benchmark`
 and therefore exclude Kubernetes TokenReview/SAR, OIDC, client-certificate
 verification, and TLS handshake costs. Run separate authenticated/TLS scenarios

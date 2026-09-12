@@ -11,6 +11,7 @@ REQUESTS="${REQUESTS:-10000}"
 CONCURRENCY="${CONCURRENCY:-32}"
 WARMUP="${WARMUP:-200}"
 OUTPUT="${OUTPUT:-$RUST_REPO/bench/results.csv}"
+KEEP_WORK_DIR="${KEEP_WORK_DIR:-0}"
 RUST_BINARY="${RUST_BINARY:-$RUST_REPO/target/release/kube-rbac-proxy}"
 GO_BINARY="${GO_BINARY:-$GO_REPO/bin/kube-rbac-proxy-bench}"
 UPSTREAM_PORT="${UPSTREAM_PORT:-19090}"
@@ -50,7 +51,11 @@ PROXY_PID=""
 cleanup() {
     if [[ -n "$PROXY_PID" ]]; then kill "$PROXY_PID" >/dev/null 2>&1 || true; wait "$PROXY_PID" >/dev/null 2>&1 || true; fi
     if [[ -n "$UPSTREAM_PID" ]]; then kill "$UPSTREAM_PID" >/dev/null 2>&1 || true; wait "$UPSTREAM_PID" >/dev/null 2>&1 || true; fi
-    rm -rf "$WORK_DIR"
+    if [[ "$KEEP_WORK_DIR" == "1" ]]; then
+        echo "benchmark diagnostics retained at $WORK_DIR" >&2
+    else
+        rm -rf "$WORK_DIR"
+    fi
 }
 trap cleanup EXIT
 
@@ -139,7 +144,12 @@ run_one() {
     rps="$(awk '/Requests per second:/ {print $4; exit}' "$load_file")"
     latency="$(awk '/Time per request:/ {print $4; exit}' "$load_file")"
     failed="$(awk '/Failed requests:/ {print $3; exit}' "$load_file")"
-    [[ "$failed" == "0" ]] || { echo "$name had $failed failed requests" >&2; return 1; }
+    if [[ "$failed" != "0" ]]; then
+        echo "$name had $failed failed requests" >&2
+        sed -n '/Complete requests:/,/Percentage of the requests served within a certain time/ p' "$load_file" >&2
+        echo "proxy log: $log_file" >&2
+        return 1
+    fi
     printf '%s,%s,%s,%s,%s,%s,%s,%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$name" "$REQUESTS" "$CONCURRENCY" \
         "$rps" "$latency" "$failed" "$rss" >>"$OUTPUT"
